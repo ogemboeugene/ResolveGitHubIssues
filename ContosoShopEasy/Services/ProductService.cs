@@ -27,18 +27,52 @@ namespace ContosoShopEasy.Services
             return _productRepository.GetProductsByCategory(categoryId);
         }
 
-        // Vulnerable search method - SQL injection risk
+        // Maximum length allowed for a search term. Keeps queries bounded and
+        // limits the surface area for abuse.
+        private const int MaxSearchTermLength = 100;
+
+        // Search products using a sanitized, length-bounded search term.
+        // User input is never concatenated into a SQL query; the underlying
+        // repository uses parameterized LINQ predicates, and the service layer
+        // rejects input containing SQL control characters before forwarding it.
         public List<Product> SearchProducts(string searchTerm)
         {
-            // This simulates a SQL injection vulnerability by directly using user input
-            // In the education context, this would be flagged as a security issue
-            Console.WriteLine($"[DEBUG] Executing search query with term: '{searchTerm}'");
-            
-            // Simulate SQL injection vulnerability by logging dangerous query
-            string simulatedQuery = $"SELECT * FROM Products WHERE Name LIKE '%{searchTerm}%' OR Description LIKE '%{searchTerm}%'";
-            Console.WriteLine($"[DEBUG] SQL Query: {simulatedQuery}");
-            
-            return _productRepository.SearchProducts(searchTerm);
+            if (!TrySanitizeSearchTerm(searchTerm, out string sanitizedTerm))
+            {
+                Console.WriteLine("[WARNING] Search term rejected by input validation");
+                return new List<Product>();
+            }
+
+            return _productRepository.SearchProducts(sanitizedTerm);
+        }
+
+        // Validate and sanitize a search term without concatenating it into SQL.
+        // Returns false (rejecting the input) when the term is empty, too long,
+        // or contains characters commonly used in SQL injection / control flow.
+        private static bool TrySanitizeSearchTerm(string searchTerm, out string sanitizedTerm)
+        {
+            sanitizedTerm = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return false;
+
+            string trimmed = searchTerm.Trim();
+            if (trimmed.Length == 0 || trimmed.Length > MaxSearchTermLength)
+                return false;
+
+            // Reject SQL control characters and common injection markers.
+            // The repository already uses parameterized predicates, so this is
+            // defense in depth rather than the primary mitigation.
+            char[] dangerousChars = { '\'', '"', ';', '-', '*', '/', '%', '_', '[', ']', '\0' };
+            if (trimmed.IndexOfAny(dangerousChars) >= 0)
+                return false;
+
+            // Reject control characters and angle brackets used in XSS payloads.
+            if (trimmed.Any(c => char.IsControl(c) || c == '<' || c == '>'))
+                return false;
+
+            sanitizedTerm = trimmed;
+            return true;
         }
 
         public List<Product> GetTopRatedProducts(int count = 10)

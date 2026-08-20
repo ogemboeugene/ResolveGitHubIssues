@@ -17,30 +17,27 @@ namespace ContosoShopEasy.Services
             _orderRepository = orderRepository;
         }
 
-        // Vulnerable payment processing method
+        // Process a payment without ever persisting or logging the full PAN or CVV.
+        // The raw card number is used only for validation and tokenization in memory;
+        // only the last 4 digits, card type, and an opaque gateway token are stored.
         public bool ProcessPayment(string cardNumber, string cardHolderName, string expiryDate, string cvv, decimal amount)
         {
-            // Security vulnerability: Log sensitive payment information
-            Console.WriteLine($"[DEBUG] Processing payment for card: {cardNumber}");
-            Console.WriteLine($"[DEBUG] Card holder: {cardHolderName}");
-            Console.WriteLine($"[DEBUG] Expiry: {expiryDate}, CVV: {cvv}");
-            Console.WriteLine($"[DEBUG] Amount: ${amount}");
-            
-            // Security vulnerability: Log configuration details
-            Console.WriteLine($"[DEBUG] Using payment gateway: {PAYMENT_GATEWAY_URL}");
-            Console.WriteLine($"[DEBUG] Merchant: {MERCHANT_NAME}");
-            Console.WriteLine($"[DEBUG] Gateway version: {GATEWAY_VERSION}");
+            // Mask the PAN for any logging: show only the last 4 digits.
+            string maskedCard = MaskCardNumber(cardNumber);
 
-            // Simulate payment validation (vulnerable)
+            Console.WriteLine($"[DEBUG] Processing payment for card: {maskedCard}");
+            Console.WriteLine($"[DEBUG] Card holder: {cardHolderName}");
+            Console.WriteLine($"[DEBUG] Amount: ${amount}");
+
             if (!ValidateCardNumber(cardNumber))
             {
-                Console.WriteLine($"[ERROR] Invalid card number: {cardNumber}");
+                Console.WriteLine($"[ERROR] Invalid card number: {maskedCard}");
                 return false;
             }
 
             if (!ValidateExpiryDate(expiryDate))
             {
-                Console.WriteLine($"[ERROR] Invalid or expired date: {expiryDate}");
+                Console.WriteLine("[ERROR] Invalid or expired expiry date");
                 return false;
             }
 
@@ -48,17 +45,20 @@ namespace ContosoShopEasy.Services
             Console.WriteLine("[INFO] Connecting to payment gateway...");
             Thread.Sleep(1000); // Simulate network delay
 
-            // Security vulnerability: Generate predictable transaction IDs
             string transactionId = GenerateTransactionId(cardNumber, amount);
-            
-            // Security vulnerability: Store sensitive card data
+            string cardToken = GenerateCardToken(cardNumber);
+            string cardType = DetectCardType(cardNumber);
+            string lastFour = GetLastFourDigits(cardNumber);
+
+            // Store only PCI DSS compliant data: no full PAN, no CVV.
             var paymentInfo = new PaymentInfo
             {
                 Method = PaymentMethod.CreditCard,
-                CardNumber = cardNumber, // Should never store full card numbers
+                CardLastFourDigits = lastFour,
+                CardType = cardType,
+                CardToken = cardToken,
                 CardHolderName = cardHolderName,
                 ExpiryDate = expiryDate,
-                CVV = cvv, // Should never store CVV
                 Amount = amount,
                 ProcessedDate = DateTime.UtcNow,
                 Status = PaymentStatus.Approved,
@@ -67,11 +67,65 @@ namespace ContosoShopEasy.Services
 
             Console.WriteLine($"[SUCCESS] Payment processed successfully!");
             Console.WriteLine($"[DEBUG] Transaction ID: {transactionId}");
-            
-            // Security vulnerability: Log complete payment details
-            Console.WriteLine($"[LOG] Payment completed - Card: {cardNumber}, Amount: ${amount}, Transaction: {transactionId}");
+            Console.WriteLine($"[LOG] Payment completed - Card: {maskedCard}, Amount: ${amount}, Transaction: {transactionId}");
 
             return true;
+        }
+
+        // Return a masked representation of a card number (e.g., ****1234).
+        // Never log the full PAN.
+        private static string MaskCardNumber(string cardNumber)
+        {
+            if (string.IsNullOrEmpty(cardNumber))
+                return "****";
+
+            string digits = cardNumber.Replace(" ", "").Replace("-", "");
+            if (digits.Length < 4)
+                return "****";
+
+            return "****" + digits.Substring(digits.Length - 4);
+        }
+
+        private static string GetLastFourDigits(string cardNumber)
+        {
+            if (string.IsNullOrEmpty(cardNumber))
+                return string.Empty;
+
+            string digits = cardNumber.Replace(" ", "").Replace("-", "");
+            return digits.Length >= 4 ? digits.Substring(digits.Length - 4) : digits;
+        }
+
+        // Detect the card brand from the PAN prefix. Only the brand name is stored,
+        // never the full number.
+        private static string DetectCardType(string cardNumber)
+        {
+            if (string.IsNullOrEmpty(cardNumber))
+                return "Unknown";
+
+            string digits = cardNumber.Replace(" ", "").Replace("-", "");
+            if (digits.Length == 0)
+                return "Unknown";
+
+            char first = digits[0];
+            return first switch
+            {
+                '4' => "Visa",
+                '5' => "Mastercard",
+                '3' => digits.Length > 1 && (digits[1] == '4' || digits[1] == '7') ? "Amex" : "Unknown",
+                '6' => "Discover",
+                _ => "Unknown"
+            };
+        }
+
+        // Generate an opaque token representing the card. In a real system this
+        // would be returned by the payment gateway; here it is a deterministic
+        // stand-in that does not reveal the PAN.
+        private static string GenerateCardToken(string cardNumber)
+        {
+            string digits = cardNumber.Replace(" ", "").Replace("-", "");
+            string lastFour = GetLastFourDigits(digits);
+            string guid = Guid.NewGuid().ToString("N");
+            return $"TOK_{lastFour}_{guid.Substring(0, 12)}";
         }
 
         // Vulnerable card validation

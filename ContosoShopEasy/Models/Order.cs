@@ -81,10 +81,20 @@ namespace ContosoShopEasy.Models
         public int Id { get; set; }
         public int OrderId { get; set; }
         public PaymentMethod Method { get; set; }
-        public string CardNumber { get; set; }  // This will be a security vulnerability - storing full card numbers
+
+        // PCI DSS compliant fields: never store the full PAN or CVV.
+        // CardLastFourDigits holds only the last 4 digits for display.
+        public string CardLastFourDigits { get; set; }
+
+        // CardType identifies the card brand (Visa, Mastercard, etc.) for display.
+        public string CardType { get; set; }
+
+        // CardToken is the opaque token returned by the payment gateway in place
+        // of the real PAN. The raw card number is never persisted.
+        public string CardToken { get; set; }
+
         public string CardHolderName { get; set; }
         public string ExpiryDate { get; set; }
-        public string CVV { get; set; }  // Another security vulnerability - storing CVV
         public decimal Amount { get; set; }
         public DateTime ProcessedDate { get; set; }
         public PaymentStatus Status { get; set; }
@@ -92,10 +102,11 @@ namespace ContosoShopEasy.Models
 
         public PaymentInfo()
         {
-            CardNumber = string.Empty;
+            CardLastFourDigits = string.Empty;
+            CardType = string.Empty;
+            CardToken = string.Empty;
             CardHolderName = string.Empty;
             ExpiryDate = string.Empty;
-            CVV = string.Empty;
             ProcessedDate = DateTime.UtcNow;
             Status = PaymentStatus.Pending;
         }

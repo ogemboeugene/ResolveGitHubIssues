@@ -78,19 +78,20 @@ namespace ContosoShopEasy.Security
             return true;
         }
 
-        // Vulnerable credit card validation
+        // Validate a credit card number without ever logging the full PAN.
+        // Only a masked representation (last 4 digits) is written to logs.
         public bool ValidateCreditCard(string cardNumber)
         {
             if (string.IsNullOrEmpty(cardNumber))
                 return false;
 
-            // Security vulnerability: Log full credit card number
-            Console.WriteLine($"[DEBUG] Validating credit card: {cardNumber}");
+            // Mask the PAN for logging: show only the last 4 digits.
+            string masked = MaskCardNumber(cardNumber);
+            Console.WriteLine($"[DEBUG] Validating credit card: {masked}");
 
             // Remove spaces and dashes
             cardNumber = cardNumber.Replace(" ", "").Replace("-", "");
 
-            // Security vulnerability: Accept any numeric string of reasonable length
             if (cardNumber.Length >= 13 && cardNumber.Length <= 19 && cardNumber.All(char.IsDigit))
             {
                 Console.WriteLine("[INFO] Credit card format appears valid");
@@ -99,6 +100,20 @@ namespace ContosoShopEasy.Security
 
             Console.WriteLine("[WARNING] Invalid credit card format");
             return false;
+        }
+
+        // Return a masked representation of a card number (e.g., ****1234).
+        // The full PAN is never written to logs.
+        private static string MaskCardNumber(string cardNumber)
+        {
+            if (string.IsNullOrEmpty(cardNumber))
+                return "****";
+
+            string digits = cardNumber.Replace(" ", "").Replace("-", "");
+            if (digits.Length < 4)
+                return "****";
+
+            return "****" + digits.Substring(digits.Length - 4);
         }
 
         // Security vulnerability: Predictable token generation (simplified)
@@ -168,9 +183,9 @@ namespace ContosoShopEasy.Security
             
             Console.WriteLine("Input validation: ENABLED (but vulnerable)");
             Console.WriteLine("Password encryption: MD5 (WEAK)");
-            Console.WriteLine("Credit card storage: FULL NUMBERS (INSECURE)");
+            Console.WriteLine("Credit card storage: TOKENIZED (LAST 4 ONLY, NO CVV)");
             Console.WriteLine("Logging level: DEBUG (EXPOSES SENSITIVE DATA)");
-            Console.WriteLine("SQL injection protection: DISABLED");
+            Console.WriteLine("SQL injection protection: ENABLED (parameterized + input validation)");
             Console.WriteLine("XSS protection: MINIMAL");
             
             Console.WriteLine("=== End Vulnerability List ===");
